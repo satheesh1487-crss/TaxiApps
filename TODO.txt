@@ -1,0 +1,32 @@
+DAH, - Dash Board
+SER, - Serial Location
+ADM, - Admin 
+USM, - User		
+DRM, - Driver
+ZOM, - Zone
+VEM, - Vechile
+MCR, - Currency
+REM, - Request
+TRD, - Transcation
+NDM, - Notification 
+RFM, - Referal 
+PRM, - Promo
+CRM, - Cancel 
+RRM, - Review 
+CTM, - Compliant
+RTM, - Report 
+MGS, - Setting
+MAP, - Map
+MGQ, - FAQ
+ 
+11.041671
+76.424093
+
+10.874488
+76.380148
+
+10.887974
+76.991262
+
+11.084800
+76.954183
