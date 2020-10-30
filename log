@@ -1,21 +1,364 @@
- /// <summary>
-        /// Get the file info with root relative path arguments
+//*********************************************************************************************
+//* File             :   Startup.cs
+//* Author           :   Rajeev Punnalil (RBEI/EPG)
+//* Date             :   10/4/2019
+//* Description      :   Initial version
+//* Version          :   1.0
+//*-------------------------------------------------------------------------------------------
+//* dd-MMM-yyyy	: Version 1.x, Changed By : xxx
+//*
+//*                 - 1)
+//*                 - 2)
+//*                 - 3)
+//*                 - 4)
+//*
+//*********************************************************************************************
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.HttpsPolicy;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Fuso.DeviceManager.Backend;
+using Fuso.DeviceManager.Entity.DataService;
+using Fuso.DeviceManager.Manager;
+using Fuso.DeviceManager.Manager.Sql;
+using Fuso.DeviceManager.Manager.MultiTenancy.Config;
+using Fuso.Reflection;
+using Swashbuckle.AspNetCore.Examples;
+using Swashbuckle.AspNetCore.Swagger;
+using Newtonsoft.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.Http;
+using Fuso.DeviceManager.Helpers;
+using Fuso.DeviceManager.Manager.Authorization;
+using Fuso.DeviceManager.Manager.Dynamic;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Http.Features;
+using Fuso.DeviceManager.Manager.Email;
+using NLog;
+using Microsoft.AspNetCore.CookiePolicy;
+
+namespace Fuso.DeviceManager
+{
+    /// <summary>
+    /// Startup entry
+    /// </summary>
+    public class Startup
+    {
+        private const string HUB_PATH = "/hubs/status";
+
+        /// <summary>
+        /// Create instance of startup
         /// </summary>
-        /// <param name="path"></param>
-        /// <returns></returns>
-        public static FileInfo GetRootRelativeFile(params string[] path)
+        /// <param name="configuration"></param>
+        public Startup(IConfiguration configuration)
         {
-            List<string> args = new List<string>();
-            args.Add(GetEntryAssemblyLocation().FullName);
-            args.AddRange(path);
-            return new FileInfo(GetFullPath(args.ToArray()));
+            Configuration = configuration;
         }
-  /// <summary>
-        /// Get combined full path
+
+        /// <summary>
+        /// Configuration
         /// </summary>
-        /// <param name="args"></param>
-        /// <returns></returns>
-        private static string GetFullPath(params string[] args)
+        public IConfiguration Configuration { get; }
+
+        /// <summary>
+        /// Configure services 
+        /// </summary>
+        /// <param name="services"></param>
+        public void ConfigureServices(IServiceCollection services)
         {
-            return Path.GetFullPath(Path.Combine(args));
+            var appSettingsSection = Configuration.GetSection("AppSettings");
+            services.Configure<AppSettings>(appSettingsSection);
+            var appSettings = appSettingsSection.Get<AppSettings>();
+
+
+            services.AddMemoryCache();
+
+            services.Configure<DeviceManagementConfiguration>(Configuration.GetSection("DeviceManagementOptions"));
+
+            services.AddSingleton<DeviceManagementConfiguration>(provider =>
+            {
+                return provider.GetRequiredService<IOptions<DeviceManagementConfiguration>>().Value;
+            });
+
+            services.Configure<FormOptions>(options =>
+            {
+                options.MemoryBufferThreshold = Int32.MaxValue;
+            });
+
+
+            services.AddSingleton<ITenantManager>( provider =>
+            {
+                var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
+                var logger = loggerFactory.CreateLogger("TenantManagerLogger");
+                var securityLogger = loggerFactory.CreateLogger("SecurityLogger");
+
+                var tenantManager = new JsonTenantManager("tenant.json", Reflections.GetEntryAssemblyLocation().FullName, logger, securityLogger);
+                tenantManager.Load();
+                return tenantManager;
+            });
+
+            services.AddSingleton<IManager, SqlManager>();
+            services.AddSingleton<IApiValidator, ApiValidator>();
+            services.AddSingleton<ITokenGenerator, TokenGenerator>();
+
+            services.AddSingleton<EmailSettings>( provider =>
+            {
+                return EmailSettings.FromConfig();
+            });
+
+            services.AddSingleton<IEmailProvider, AdSmtpMailer>();
+
+            if (appSettings.SimulateADRoles)
+                services.AddSingleton<IAuthorizationProvider, RoleMirrorAuthorizationProvider>();
+            else
+                services.AddSingleton<IAuthorizationProvider, LdapAuthorizationProvider>();
+
+            services.AddSingleton<IDeviceStatusCache, DeviceStatusCache>();
+
+            services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new Info
+                {
+                    Version = "v1",
+                    Title = "DeviceManager API",
+                    Description = "API For configuring and viewing Device Manager."
+                });
+
+                // Swagger 2.+ support
+                var security = new Dictionary<string, IEnumerable<string>>
+                {
+                    {"Bearer", new string[] { }},
+                };
+
+                c.AddSecurityDefinition("Bearer", new ApiKeyScheme
+                {
+                    Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+                    Name = "Authorization",
+                    In = "header",
+                    Type = "apiKey"
+                });
+                c.AddSecurityRequirement(security);
+
+                c.OperationFilter<ExamplesOperationFilter>();
+
+
+                // Set the comments path for the Swagger JSON and UI.
+                var xmlFile = Reflections.GetApplicationCommentFile();
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                c.IncludeXmlComments(xmlPath);
+            });
+
+
+            if (!string.IsNullOrWhiteSpace(appSettings.CorsOrigins))
+            {
+                var corsPaths = EnableCors(appSettings);
+                services.AddCors(options =>
+                {
+                    options.AddPolicy("AllowAll",
+                        builder =>
+                        {
+                            builder
+                            .WithOrigins(corsPaths)
+                            .AllowAnyMethod()
+                            .AllowAnyHeader()
+                            .AllowCredentials()
+                            .WithExposedHeaders("Content-Disposition");
+                        });
+                });
+            }
+
+
+            services.Configure<CookiePolicyOptions>(options =>
+            {
+                options.MinimumSameSitePolicy = SameSiteMode.Strict;
+                options.HttpOnly = HttpOnlyPolicy.Always;
+            });
+
+
+            services.AddSignalR();
+
+            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(options =>
+                {
+                    var sp = services.BuildServiceProvider();
+
+                    var tenantManager = sp.GetService<ITenantManager>();
+
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuer = true,
+                        ValidateAudience = true,
+                        ValidateLifetime = true,
+                        ValidateIssuerSigningKey = true,
+                        ValidIssuer = appSettings.JwtIssuer,
+                        ValidAudiences = tenantManager.GetValidAudiences(),
+                        ClockSkew = TimeSpan.Zero,
+
+                        IssuerSigningKeyResolver = (string token, SecurityToken securityToken, string kid, TokenValidationParameters validationParameters) =>
+                        {
+                            return tenantManager.GetSecurityKey(kid);
+                             
+                        }
+                    };
+
+                    
+                });
+
+
+            services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
         }
+
+        /// <summary>
+        /// Enable cors setting
+        /// </summary>
+        /// <param name="appSettings"></param>
+        private string[] EnableCors(AppSettings appSettings)
+        {
+            
+            var serverName = System.Environment.MachineName;
+            var fqhn = System.Net.Dns.GetHostEntry(serverName).HostName;
+
+            List<string> corsPaths = new List<string>();
+            corsPaths.AddRange(appSettings.CorsOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries));
+
+            if (!string.IsNullOrEmpty(fqhn))
+            {
+                if (appSettings.UseHttps)
+                    corsPaths.Add($"https://{fqhn}:{appSettings.Port}");
+
+                if (appSettings.UseMutualTls)
+                    corsPaths.Add($"https://{fqhn}:{appSettings.MutualTlsPort}");
+
+                if (appSettings.UseHttp)
+                    corsPaths.Add($"http://{fqhn}:{appSettings.HttpPort}");
+
+                for (int index = 0; index < corsPaths.Count; index++)
+                {
+                    var content = corsPaths[index];
+                    content = content.Replace("{{Port}}", appSettings.Port.ToString());
+                    content = content.Replace("{{DevPort}}", appSettings.DevPort.ToString());
+                    corsPaths[index] = content;
+                }
+            }
+
+            return corsPaths.ToArray();
+        }
+
+       /// <summary>
+       /// Configure application
+       /// </summary>
+       /// <param name="app"></param>
+       /// <param name="env"></param>
+        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                app.UseDeveloperExceptionPage();
+            }
+            else
+            {
+                app.UseHsts();
+            }
+
+            
+
+            app.UseSwagger();
+            app.UseSwaggerUI(c =>
+            {
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "Device Manager 1.0 API v1");
+                c.RoutePrefix = "swagger";
+            });
+
+            app.UseCors("AllowAll");
+
+            var statusCache = app.ApplicationServices.GetService<IDeviceStatusCache>();
+
+            var statusHub = app.ApplicationServices.GetService<IHubContext<StatusHub>>();
+
+            statusCache.OnDeviceOffline = new Action<string>((string deviceId) => {
+                statusHub.StatusChanged(statusCache, deviceId, DeviceStatusValue.Offline);
+            });
+
+            statusCache.StartMonitoring();
+
+
+            StaticFolder webFolder = new StaticFolder("../Web");
+
+            if (!webFolder.Folder.Exists)
+                webFolder.Folder.Create();
+
+
+            if (webFolder.Folder.GetFiles("index.html").Length < 1)
+                Console.WriteLine("Web files are missing. Web server integration mode expected.");
+
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new PhysicalFileProvider(webFolder.Folder.FullName),
+                ServeUnknownFileTypes = true
+            });
+
+            app.UseSignalR(routes =>
+            {
+                routes.MapHub<StatusHub>(HUB_PATH);
+            });
+
+            //Security fix
+            app.UseCookiePolicy(new CookiePolicyOptions()
+            {
+                HttpOnly = HttpOnlyPolicy.Always,
+            });
+
+            app.Use(async (context, next) =>
+            {
+                
+                context.Response.Headers.Add("X-FRAME-OPTIONS", "DENY");
+                context.Response.Headers.Add("Content-Security-Policy", "frame-ancestors 'none'");
+
+                context.Response.Headers.Add("X-Content-Type-Options", "nosniff");
+                context.Response.Headers.Add("X-XSS-Protection", "nosniff");
+
+
+                if (context.Request.Path.HasValue && !context.Request.Path.Value.StartsWith("/api"))
+                {
+                    context.Response.ContentType = "text/html";
+
+                    env.ContentRootPath = webFolder.Folder.FullName;
+
+                    if (context.Request.Path.Value.ToLower() == "swagger")
+                    {
+                        await context.Response.SendFileAsync(
+                            webFolder.GetFile("Swagger/index.html")
+                       );
+                    }
+                    else
+                    {
+                        await context.Response.SendFileAsync(
+                            webFolder.GetFile("index.html")
+                        );
+                    }
+                    return;
+                }
+                await next();
+            });
+
+            // Error handling global
+            app.UseMiddleware(typeof(ErrorHandlingMiddleware));
+
+
+            app.UseMvc();
+        }
+    }
+}
