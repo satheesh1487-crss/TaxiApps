@@ -10,3 +10,12 @@
             args.AddRange(path);
             return new FileInfo(GetFullPath(args.ToArray()));
         }
+  /// <summary>
+        /// Get combined full path
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        private static string GetFullPath(params string[] args)
+        {
+            return Path.GetFullPath(Path.Combine(args));
+        }
