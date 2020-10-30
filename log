@@ -1,57 +1,12 @@
-
-    internal class StaticFile : IFileInfo
-    {
-        /// <summary>
-        /// object reference
+ /// <summary>
+        /// Get root relative dir
         /// </summary>
-        private readonly FileInfo _fileInfo;
-
-        /// <summary>
-        /// check and see if exists
-        /// </summary>
-        public bool Exists => _fileInfo.Exists;
-
-        /// <summary>
-        /// Get length
-        /// </summary>
-        public long Length => _fileInfo.Length;
-
-        /// <summary>
-        /// Get physical path
-        /// </summary>
-        public string PhysicalPath => _fileInfo.FullName;
-
-        /// <summary>
-        /// Get name
-        /// </summary>
-        public string Name => _fileInfo.Name;
-
-        /// <summary>
-        /// Get last modifed date
-        /// </summary>
-        public DateTimeOffset LastModified => _fileInfo.LastWriteTime;
-
-        /// <summary>
-        /// Check if it is a directory
-        /// </summary>
-        public bool IsDirectory => Directory.Exists(_fileInfo.FullName);
-
-        /// <summary>
-        /// Create a stream
-        /// </summary>
+        /// <param name="path"></param>
         /// <returns></returns>
-        public Stream CreateReadStream()
+        public static DirectoryInfo GetRootRelativeDir(params string[] path)
         {
-            return File.OpenRead(_fileInfo.FullName);
+            List<string> args = new List<string>();
+            args.Add(GetEntryAssemblyLocation().FullName);
+            args.AddRange(path);
+            return new DirectoryInfo(GetFullPath(args.ToArray()));
         }
-
-        public StaticFile(FileInfo file)
-        {
-            if (file == null)
-                throw new ArgumentNullException("file");
-
-            _fileInfo = file;
-        }
-    }
-}
-
