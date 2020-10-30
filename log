@@ -1,31 +1,57 @@
- /// <summary>
-        /// Static folder path
+
+    internal class StaticFile : IFileInfo
+    {
+        /// <summary>
+        /// object reference
         /// </summary>
-        public DirectoryInfo Folder { get; private set; }
+        private readonly FileInfo _fileInfo;
 
         /// <summary>
-        /// File cache
+        /// check and see if exists
         /// </summary>
-        private Dictionary<string, IFileInfo> Cache { get; set; }
-
-        public StaticFolder(string relativePath)
-        {
-            Folder = Reflections.GetRootRelativeDir(relativePath);
-            Cache = new Dictionary<string, IFileInfo>();
-        }
+        public bool Exists => _fileInfo.Exists;
 
         /// <summary>
-        /// Get file
+        /// Get length
         /// </summary>
-        /// <param name="path"></param>
+        public long Length => _fileInfo.Length;
+
+        /// <summary>
+        /// Get physical path
+        /// </summary>
+        public string PhysicalPath => _fileInfo.FullName;
+
+        /// <summary>
+        /// Get name
+        /// </summary>
+        public string Name => _fileInfo.Name;
+
+        /// <summary>
+        /// Get last modifed date
+        /// </summary>
+        public DateTimeOffset LastModified => _fileInfo.LastWriteTime;
+
+        /// <summary>
+        /// Check if it is a directory
+        /// </summary>
+        public bool IsDirectory => Directory.Exists(_fileInfo.FullName);
+
+        /// <summary>
+        /// Create a stream
+        /// </summary>
         /// <returns></returns>
-        public IFileInfo GetFile(string path)
+        public Stream CreateReadStream()
         {
-            if (!Cache.ContainsKey(path))
-            {
-                var file = Reflections.GetRootRelativeFile(Folder.FullName, path);
-                Cache[path] = new StaticFile(file);
-            }
-
-            return Cache[path];
+            return File.OpenRead(_fileInfo.FullName);
         }
+
+        public StaticFile(FileInfo file)
+        {
+            if (file == null)
+                throw new ArgumentNullException("file");
+
+            _fileInfo = file;
+        }
+    }
+}
+
