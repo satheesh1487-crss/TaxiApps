@@ -122,4 +122,5 @@ namespace Fuso.DeviceManager.Backend
         /// </summary>
         public bool UseMutualTls { get; set; }
     }
+    
 }
