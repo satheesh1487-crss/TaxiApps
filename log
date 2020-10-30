@@ -1,8 +1,62 @@
-/// <summary>
-        /// Get location of the entry assembly
-        /// </summary>
-        /// <returns></returns>
-        public static DirectoryInfo GetCurrentAssemblyLocation()
-        {
-            return new FileInfo(Assembly.GetCallingAssembly().Location).Directory;
-        }
+{
+  "AppSettings": {
+    "JwtIssuer": "http://localhost:5000/DeviceManager",
+    "JwtExpiryMinutes": 30,
+    "RefreshTokenExpiryMinutes": 30,
+    "SwaggerJsonPath": "/swagger/v1/swagger.json",
+    "DataPath": "../Data",
+    "CorsOrigins": "http://localhost:{{Port}},https://localhost:{{Port}},http://localhost:{{DevPort}}",
+    "UseHttps": false,
+    "Port": 19502,
+    "UseHttp": true,
+    "HttpPort": 19500,
+    "UseMutualTls": false,
+    "MutualTlsPort": 19501,
+    "DevPort": 4200,
+    "AgentBase": "/FoF/AdapterFramework/",
+    "ArtifactBase": "C:\\Artifacts",
+    "DomainName": "APAC",
+    "CertificateFile": "KOR1080476.KOR.APAC.BOSCH.COM.pfx",
+    "CertificatePassword": "ARBLMGLis1f0oA68UYXbAQ==",
+    "SimulateADRoles": "true",
+    "EmailHost": "rb-smtp-int.bosch.com",
+    "EmailPort": 25,
+    "EmailSenderId": "DeviceManager@in.bosch.com",
+    "ServerUrl": "http://localhost:19500",
+    "OPCIntegrationEnabled": true,
+    "OpcConnectionTimeOut": 30000,
+    "OPCConfigResyncInterval": 60000
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Information"
+    }
+  },
+  "AllowedHosts": "*",
+  "DeviceManagementOptions": {
+    "allowedTransactionFileTypes": [
+      {
+        "extension": ".xml",
+        "mime": "text/xml"
+      },
+      {
+        "extension": ".json",
+        "mime": "application/json"
+      },
+      {
+        "extension": ".zip",
+        "mime": "application/zip"
+      },
+      {
+        "extension": ".cfg",
+        "mime": "text/plain"
+      },
+      {
+        "extension": ".txt",
+        "mime": "text/plain"
+      }
+    ],
+    "MaxFileSizeMB": 125555
+  }
+}
