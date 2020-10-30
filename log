@@ -1,7 +1,7 @@
 //*********************************************************************************************
-//* File             :   Program.cs
+//* File             :   AppSettings.cs
 //* Author           :   Rajeev Punnalil (RBEI/EPG)
-//* Date             :   10/4/2019
+//* Date             :   25/4/2019
 //* Description      :   Initial version
 //* Version          :   1.0
 //*-------------------------------------------------------------------------------------------
@@ -15,179 +15,111 @@
 //*********************************************************************************************
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-using NLog.Web;
-using Fuso.Reflection;
-using System.Net;
-using Fuso.DeviceManager.Backend;
-using Microsoft.AspNetCore.Hosting.WindowsServices;
-using Microsoft.AspNetCore.Server.Kestrel.Https;
-using Fuso.DeviceManager.Contract.Encryption;
+using System.Text;
 
-namespace Fuso.DeviceManager
+namespace Fuso.DeviceManager.Backend
 {
     /// <summary>
-    /// Program startup
+    /// Application settings
     /// </summary>
-    public static class Program
+    public class AppSettings
     {
         /// <summary>
-        /// Main function
+        /// Jwt issuer details
         /// </summary>
-        /// <param name="args"></param>
-        public static void Main(string[] args)
-        {
-            if (args.Contains("--encrypt"))
+        public string JwtIssuer { get; set; }
 
-            {
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Parameter expected for encryption");
-                    return;
-                }
-
-                Console.WriteLine($"Encrypting content : '{args[1]}'");
-
-                var content = DataEncrypter.Encrypt(args[1]);
-                Console.WriteLine(content);
-
-                Console.WriteLine(DataEncrypter.Decrypt(content));
-
-                Console.WriteLine("Press enter key to exit.");
-                Console.ReadLine();
-
-
-                return;
-            }
-
-
-            bool isService = !(System.Diagnostics.Debugger.IsAttached || args.Contains("--console"));
-
-            Directory.SetCurrentDirectory(Reflections.GetEntryAssemblyLocation().FullName);
-
-            Console.WriteLine($"Device management server V{Reflections.GetAppVersion()}");
-
-            var logger = NLog.Web.NLogBuilder.ConfigureNLog("nlog.config").GetCurrentClassLogger();
-
-            logger.Log(NLog.LogLevel.Info, $"Starting Device Manager Server Version 1 : {Reflections.GetAppVersion()}");
-
-
-            try
-            {
-                logger.Log(NLog.LogLevel.Info, $"Creating host");
-
-                var host = CreateWebHostBuilder(args).Build();
-
-
-                logger.Log(NLog.LogLevel.Info, $"Host created");
-
-                if (isService) {
-                    logger.Log(NLog.LogLevel.Info, "Running application as service.");
-                    host.RunAsService();
-                    logger.Log(NLog.LogLevel.Info, "Application run executed in service mode.");
-                }
-                else
-                    host.Run();
-
-            }
-            catch (Exception ex)
-            {
-                //NLog: catch setup errors
-                logger.Error(ex, "Stopped program because of exception");
-                throw;
-            }
-            finally
-            {
-                // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
-                NLog.LogManager.Shutdown();
-            }
-        }
 
         /// <summary>
-        /// Create web host
+        /// Jwt expiry in minutes
         /// </summary>
-        /// <param name="args"></param>
-        /// <returns></returns>
+        public double JwtExpiryMinutes { get; set; }
 
-        public static IWebHostBuilder CreateWebHostBuilder(string[] args)
-        {
-            var config = new ConfigurationBuilder()
-                   .SetBasePath(Fuso.Reflection.Reflections.GetCurrentAssemblyLocation().FullName)
-                   .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                   .Build();
+        /// <summary>
+        /// Refresh token expiry minutes
+        /// </summary>
+        public double RefreshTokenExpiryMinutes { get; set; }
 
+        /// <summary>
+        /// Get swagger json path
+        /// </summary>
+        public string SwaggerJsonPath { get; set; }
 
-            IConfiguration configuration = new ConfigurationBuilder()
-                .AddJsonFile(Reflections.GetRootRelativeFile("appsettings.json").FullName, true, true)
-                .Build();
+        /// <summary>
+        /// Allowed cors path
+        /// </summary>
+        public string CorsOrigins { get; set; }
 
-            var appSettingsSection = configuration.GetSection("AppSettings");
+        /// <summary>
+        /// When set to true https connection and redirection will be enabled
+        /// </summary>
+        public bool UseHttps { get; set; }
 
-            var appSettings = appSettingsSection.Get<AppSettings>();
+        /// <summary>
+        /// Enable http
+        /// </summary>
 
-            string url = string.Empty;
+        public bool UseHttp { get; set; }
 
+        /// <summary>
+        /// Http port
+        /// </summary>
+        public int HttpPort { get; set; }
 
-            if(appSettings.UseHttp)
-                url = $"http://*:{appSettings.HttpPort};";
+        /// <summary>
+        /// Https port number
+        /// </summary>
+        public int Port { get; set; }
 
-            if (appSettings.UseHttps)
-            {
-                url += $"https://*:{appSettings.Port}";
+        /// <summary>
+        /// TLS port number
+        /// </summary>
+        public int MutualTlsPort { get; set; }
 
-                var fileInfo = new FileInfo(appSettings.CertificateFile);
+        /// <summary>
+        /// Development port
+        /// </summary>
+        public int DevPort { get; set; }
 
-                if (!fileInfo.Exists)
-                    throw new FileNotFoundException($"Certificate file not found - '{fileInfo.FullName}'");
-            }
+        /// <summary>
+        /// Base folder for connector configuration
+        /// </summary>
+        public string AgentBase { get; set; }
 
-            return WebHost.CreateDefaultBuilder(args)
-                .UseConfiguration(config)
-                .UseKestrel(options =>
-                {
-                    options.AddServerHeader = false;
+        /// <summary>
+        /// Base folder for connector configuration
+        /// </summary>
+        public string DomainName { get; set; }
 
-                    options.Limits.MaxRequestBodySize = null;
+        /// <summary>
+        /// Base folder for FileList
+        /// </summary>
+        public string ArtifactBase { get; set; }
 
-                    if (appSettings.UseHttps)
-                    {
-                        options.Listen(IPAddress.Any, appSettings.Port, listenOptions =>
-                        {
-                            listenOptions.UseHttps(appSettings.CertificateFile, DataEncrypter.Decrypt(appSettings.CertificatePassword));
-                        });
-                    }
+        /// <summary>
+        /// Certificate file
+        /// </summary>
+        public string CertificateFile { get; set; }
 
-                    if (appSettings.UseMutualTls)
-                    {
-                        options.Listen(IPAddress.Any, appSettings.MutualTlsPort, listenOptions =>
-                        {
-                            listenOptions.UseHttps(appSettings.CertificateFile, DataEncrypter.Decrypt(appSettings.CertificatePassword), kerstelOptions =>
-                            {
-                                kerstelOptions.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
-                                kerstelOptions.SslProtocols = System.Security.Authentication.SslProtocols.Tls12;
-                            });
-                        });
-                    }
+        /// <summary>
+        /// Certificate password
+        /// </summary>
+        public string CertificatePassword { get; set; }
 
-                    if (appSettings.UseHttp)
-                    {
-                        options.Listen(IPAddress.Any, appSettings.HttpPort);
-                    }
-                })
-                .UseUrls(url)
-                .UseStartup<Startup>()
-                .ConfigureLogging(logging =>
-                {
-                    logging.ClearProviders();
-                    logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Information);
-                })
-                .UseNLog();
-        }
+        /// <summary>
+        /// Check if role has to be taken from simulation
+        /// Should be false in production
+        /// </summary>
+        public bool SimulateADRoles { get; set; }
+
+        /// <summary>
+        /// Path where data will be stored
+        /// </summary>
+        public string DataPath { get; set; }
+
+        /// <summary>
+        /// Enable mutual TLS
+        /// </summary>
+        public bool UseMutualTls { get; set; }
     }
 }
