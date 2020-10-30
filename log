@@ -1,56 +1,193 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<nlog xmlns="http://www.nlog-project.org/schemas/NLog.xsd"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      autoReload="true"
-      internalLogLevel="Error"
-      internalLogFile="logs/internal-nlog.txt">
+//*********************************************************************************************
+//* File             :   Program.cs
+//* Author           :   Rajeev Punnalil (RBEI/EPG)
+//* Date             :   10/4/2019
+//* Description      :   Initial version
+//* Version          :   1.0
+//*-------------------------------------------------------------------------------------------
+//* dd-MMM-yyyy	: Version 1.x, Changed By : xxx
+//*
+//*                 - 1)
+//*                 - 2)
+//*                 - 3)
+//*                 - 4)
+//*
+//*********************************************************************************************
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using NLog.Web;
+using Fuso.Reflection;
+using System.Net;
+using Fuso.DeviceManager.Backend;
+using Microsoft.AspNetCore.Hosting.WindowsServices;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Fuso.DeviceManager.Contract.Encryption;
 
-  <!-- enable asp.net core layout renderers -->
-  <extensions>
-    <add assembly="NLog.Web.AspNetCore"/>
-  </extensions>
+namespace Fuso.DeviceManager
+{
+    /// <summary>
+    /// Program startup
+    /// </summary>
+    public static class Program
+    {
+        /// <summary>
+        /// Main function
+        /// </summary>
+        /// <param name="args"></param>
+        public static void Main(string[] args)
+        {
+            if (args.Contains("--encrypt"))
 
-  <!-- the targets to write to -->
-  <targets>
-    <!-- write logs to file  -->
-    <target xsi:type="File" name="allfile" fileName="../logs/ms/all-${shortdate}.log"
-            layout="${longdate}|${event-properties:item=${EventId_Id}|${uppercase:${level}}|${logger}|${message} ${exception:format=tostring}" 
-            archiveFileName="../logs/ms/archive/log.{#}.txt"
-            archiveEvery="Day"
-            archiveNumbering="Rolling"
-            maxArchiveFiles="30"
-            concurrentWrites="true"/>
+            {
+                if (args.Length < 2)
+                {
+                    Console.WriteLine("Parameter expected for encryption");
+                    return;
+                }
 
-    <target xsi:type="File" name="securityLog" fileName="../logs/security/Security-${shortdate}.log"
-            layout="${longdate}|${event-properties:item=${uppercase:${level}}|${message} ${exception:format=tostring}"
-            archiveFileName="../logs/security/archive/log.{#}.txt"
-            archiveEvery="Day"
-            archiveNumbering="Rolling"
-            maxArchiveFiles="30"
-            concurrentWrites="true"/>
+                Console.WriteLine($"Encrypting content : '{args[1]}'");
 
-    <!-- another file log, only own logs. Uses some ASP.NET core renderers -->
-    <target xsi:type="File" name="ownFile-web" fileName="../logs/dm/Log-${shortdate}.log"
-            layout="${longdate}|${event-properties:item=${EventId_Id}|${uppercase:${level}}|${logger}|${message} ${exception:format=tostring}|url: ${aspnet-request-url}|action: ${aspnet-mvc-action}" 
-             archiveFileName="../logs/dm/archive/log.{#}.txt"
-            archiveEvery="Day"
-            archiveNumbering="Rolling"
-            maxArchiveFiles="30"
-            concurrentWrites="true"/>
-  </targets>
+                var content = DataEncrypter.Encrypt(args[1]);
+                Console.WriteLine(content);
 
-  <!-- rules to map from logger name to target -->
-  <rules>
-    <!--All logs, including from Microsoft-->
-    <logger name="*" minlevel="Trace" writeTo="allfile" />
+                Console.WriteLine(DataEncrypter.Decrypt(content));
 
-    <!--Skip non-critical Microsoft logs and so log only own logs-->
-    <logger name="Microsoft.*" maxlevel="Info" final="true" />
+                Console.WriteLine("Press enter key to exit.");
+                Console.ReadLine();
 
-    <!--Skip non-critical Microsoft logs and so log only own logs-->
-    <logger name="SecurityLogger" maxlevel="Info" final="true" writeTo="securityLog"/>
-    
-    <!-- BlackHole without writeTo -->
-    <logger name="*" minlevel="Trace" writeTo="ownFile-web" />
-  </rules>
-</nlog>
+
+                return;
+            }
+
+
+            bool isService = !(System.Diagnostics.Debugger.IsAttached || args.Contains("--console"));
+
+            Directory.SetCurrentDirectory(Reflections.GetEntryAssemblyLocation().FullName);
+
+            Console.WriteLine($"Device management server V{Reflections.GetAppVersion()}");
+
+            var logger = NLog.Web.NLogBuilder.ConfigureNLog("nlog.config").GetCurrentClassLogger();
+
+            logger.Log(NLog.LogLevel.Info, $"Starting Device Manager Server Version 1 : {Reflections.GetAppVersion()}");
+
+
+            try
+            {
+                logger.Log(NLog.LogLevel.Info, $"Creating host");
+
+                var host = CreateWebHostBuilder(args).Build();
+
+
+                logger.Log(NLog.LogLevel.Info, $"Host created");
+
+                if (isService) {
+                    logger.Log(NLog.LogLevel.Info, "Running application as service.");
+                    host.RunAsService();
+                    logger.Log(NLog.LogLevel.Info, "Application run executed in service mode.");
+                }
+                else
+                    host.Run();
+
+            }
+            catch (Exception ex)
+            {
+                //NLog: catch setup errors
+                logger.Error(ex, "Stopped program because of exception");
+                throw;
+            }
+            finally
+            {
+                // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
+                NLog.LogManager.Shutdown();
+            }
+        }
+
+        /// <summary>
+        /// Create web host
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
+
+        public static IWebHostBuilder CreateWebHostBuilder(string[] args)
+        {
+            var config = new ConfigurationBuilder()
+                   .SetBasePath(Fuso.Reflection.Reflections.GetCurrentAssemblyLocation().FullName)
+                   .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                   .Build();
+
+
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddJsonFile(Reflections.GetRootRelativeFile("appsettings.json").FullName, true, true)
+                .Build();
+
+            var appSettingsSection = configuration.GetSection("AppSettings");
+
+            var appSettings = appSettingsSection.Get<AppSettings>();
+
+            string url = string.Empty;
+
+
+            if(appSettings.UseHttp)
+                url = $"http://*:{appSettings.HttpPort};";
+
+            if (appSettings.UseHttps)
+            {
+                url += $"https://*:{appSettings.Port}";
+
+                var fileInfo = new FileInfo(appSettings.CertificateFile);
+
+                if (!fileInfo.Exists)
+                    throw new FileNotFoundException($"Certificate file not found - '{fileInfo.FullName}'");
+            }
+
+            return WebHost.CreateDefaultBuilder(args)
+                .UseConfiguration(config)
+                .UseKestrel(options =>
+                {
+                    options.AddServerHeader = false;
+
+                    options.Limits.MaxRequestBodySize = null;
+
+                    if (appSettings.UseHttps)
+                    {
+                        options.Listen(IPAddress.Any, appSettings.Port, listenOptions =>
+                        {
+                            listenOptions.UseHttps(appSettings.CertificateFile, DataEncrypter.Decrypt(appSettings.CertificatePassword));
+                        });
+                    }
+
+                    if (appSettings.UseMutualTls)
+                    {
+                        options.Listen(IPAddress.Any, appSettings.MutualTlsPort, listenOptions =>
+                        {
+                            listenOptions.UseHttps(appSettings.CertificateFile, DataEncrypter.Decrypt(appSettings.CertificatePassword), kerstelOptions =>
+                            {
+                                kerstelOptions.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
+                                kerstelOptions.SslProtocols = System.Security.Authentication.SslProtocols.Tls12;
+                            });
+                        });
+                    }
+
+                    if (appSettings.UseHttp)
+                    {
+                        options.Listen(IPAddress.Any, appSettings.HttpPort);
+                    }
+                })
+                .UseUrls(url)
+                .UseStartup<Startup>()
+                .ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Information);
+                })
+                .UseNLog();
+        }
+    }
+}
