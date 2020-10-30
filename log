@@ -1,10 +1,8 @@
-  /// <summary>
-        /// Get application version string
+/// <summary>
+        /// Get location of the entry assembly
         /// </summary>
         /// <returns></returns>
-        public static string GetAppVersion()
+        public static DirectoryInfo GetCurrentAssemblyLocation()
         {
-            var assembly = Assembly.GetEntryAssembly();
-            var version = assembly.GetName().Version;
-            return $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}";
+            return new FileInfo(Assembly.GetCallingAssembly().Location).Directory;
         }
