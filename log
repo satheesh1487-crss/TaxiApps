@@ -1,12 +1,10 @@
- /// <summary>
-        /// Get root relative dir
+  /// <summary>
+        /// Get application version string
         /// </summary>
-        /// <param name="path"></param>
         /// <returns></returns>
-        public static DirectoryInfo GetRootRelativeDir(params string[] path)
+        public static string GetAppVersion()
         {
-            List<string> args = new List<string>();
-            args.Add(GetEntryAssemblyLocation().FullName);
-            args.AddRange(path);
-            return new DirectoryInfo(GetFullPath(args.ToArray()));
+            var assembly = Assembly.GetEntryAssembly();
+            var version = assembly.GetName().Version;
+            return $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}";
         }
